@@ -18,9 +18,9 @@ additional_address <- dbGetQuery(con,"
       ,UPPER(p.zip_hx) zip_hx
     FROM hpceclarity.dbo.chmc_adt_addr_hx p 
     LEFT JOIN temptable.dbo.full_list_geocode g
-      ON ((p.[addr_hx_line1] = g.add_line_1) 
+      ON ((p.addr_hx_line1 = g.add_line_1) 
         OR (p.addr_hx_line1 IS NULL AND g.add_line_1 IS NULL))
-      AND ((p.addr_hx_line2] = g.add_line_2) 
+      AND ((p.addr_hx_line2 = g.add_line_2) 
         OR (p.addr_hx_line2 IS NULL AND g.add_line_2 IS NULL))
       AND ((p.city_hx = g.city) 
         OR ((p.city_hx IS NULL OR p.city_hx = '') AND g.city IS NULL))
@@ -47,7 +47,7 @@ additional_address <- dbGetQuery(con,"
       LEFT JOIN temptable.dbo.full_list_geocode g
         ON ((p.add_line_1 = g.add_line_1) 
           OR (p.add_line_1 IS NULL AND g.add_line_1 IS NULL))
-        AND ((p.add_line_2 = g.add_line_2 
+        AND ((p.add_line_2 = g.add_line_2)
           OR (p.add_line_2 IS NULL AND g.add_line_2 IS NULL))
         AND ((p.city = g.city) 
           OR ((p.city IS NULL OR p.[CITY]='') AND g.city IS NULL))
@@ -56,13 +56,13 @@ additional_address <- dbGetQuery(con,"
         AND ((p.state = g.state) 
           OR (p.state IS NULL AND g.state IS NULL))
     WHERE ((p.add_line_1 IS NOT NULL OR p.add_line_2 IS NOT NULL) 
-        AND p.ZIP is not null)
+        AND p.zip is not null)
       AND g.geocode_attempted IS NULL
       AND ISNULL(DATALENGTH(p.add_line_1), 0)
         + ISNULL(DATALENGTH(p.add_line_2), 0)
         + ISNULL(DATALENGTH(p.city), 0)
         + ISNULL(DATALENGTH(p.state), 0)
-        + IS(DATALENGTH(p.zip), 0) <=900
+        + ISNULL(DATALENGTH(p.zip), 0) <=900
       AND is_valid_pat_yn = 'Y'
   UNION
   SELECT DISTINCT
@@ -106,10 +106,10 @@ current_geocoded <- dbGetQuery(con,"
       g.statefp,
       g.countyfp,
       g.tractce,
-      g.geoid,
+      g.GEOID,
       g.geocode_attempted
   FROM temptable.dbo.full_list_geocode g
-")
+                               ")
 
 addr_unique_update <- additional_address |>
   #Some non-compliant characters stored on server, need to remove
@@ -153,8 +153,8 @@ addr_unique_update <- additional_address |>
     addr_hx_line1_clean = str_squish(addr_hx_line1_clean),
     addr_hx_line1_clean = replace(
       addr_hx_line1_clean, 
-      which(addr_hx_line_clean == "") 
-      ,NA
+      which(addr_hx_line1_clean == ""),
+      NA
       )
     ) |>
   mutate(
@@ -194,7 +194,7 @@ addr_unique_update <- additional_address |>
     addr_hx_line2_clean = str_squish(addr_hx_line2_clean),
     addr_hx_line2_clean = replace(
       addr_hx_line2_clean,
-      which(addr_hx_line2_CLEAN == ""),
+      which(addr_hx_line2_clean == ""),
       NA)
     ) |>
   mutate(
@@ -225,7 +225,7 @@ addr_unique_update <- additional_address |>
     )
     ) |>
   mutate(
-    POBox = str_detect(ADDRESS_FOR_GEOCODING, regex("^P\\s*O\\s*(B[ox])*"))
+    POBox = str_detect(address_for_geocoding, regex("^P\\s*O\\s*(B[ox])*"))
     ) |>
   mutate(
     CCHMC = str_detect(
@@ -262,7 +262,7 @@ addr_unique_update <- additional_address |>
       POBox == FALSE & 
       foreign_address == FALSE & 
       unknown_address == FALSE & 
-      num_street_form == TRUE
+      num_street_for == TRUE
     ) |>
   dplyr::select(
     -c(address_for_geocoding_zip, addr_hx_line1_clean, addr_hx_line2_clean)
@@ -298,7 +298,7 @@ table_order <- c(
   ,'StJoe'
   ,'unknown_address'
   ,'foreign_address'
-  ,'num_street_form'
+  ,'num_street_for'
   ,'filter_for_geocoding'
   ,'x'
   ,'y'
@@ -306,7 +306,7 @@ table_order <- c(
   ,'countyfp'
   ,'tractce'
   ,'GEOID'
-  ,'geocoding_attempted'
+  ,'geocode_attempted'
   )
 
 addresses_already_done <- addr_unique_update |>
@@ -337,10 +337,10 @@ addresses_already_done$city <-
 ##To upload and update FULL_LIST_GEOCODE table
 #dbExecute(con,"drop table ##New_addresses")
 
-dbWriteTable(con,"##New_addresses", ADDRESSES_ALREADY_DONE, temporary=FALSE)
+dbWriteTable(con,"##New_addresses", addresses_already_done, temporary = FALSE)
 
 dbExecute(con, "
-  alter table ##New_addresses
+  ALTER TABLE ##New_addresses
   ADD [GeoLocation] geography")
 
 dbExecute(con,"
@@ -352,7 +352,7 @@ dbExecute(con,"
   DELETE p
   FROM ##New_addresses p
     INNER JOIN temptable.dbo.full_list_geocode g
-      ON ((p.add_line_1 = g.add_line_1 
+      ON ((p.add_line_1 = g.add_line_1) 
         OR (p.add_line_1 IS NULL AND g.add_line_1 IS NULL))
 	    AND ((p.add_line_2 = g.add_line_2) 
 	      OR (p.add_line_2 IS NULL AND g.add_line_2 IS NULL))
@@ -386,9 +386,9 @@ list_to_geocode_update <- addr_unique_update |>
   unique() |>
   mutate(
     address = glue::glue(
-      "{ADDRESS_FOR_GEOCODING}, 
-      {CITY_HX_FOR_GEOCODING}, 
-      {STATE_FOR_GEOCODING} {ZIP5_FOR_GEOCODING}"
+      "{address_for_geocoding}, 
+      {city_hx_for_geocoding}, 
+      {state_for_geocoding} {zip5_for_geocoding}"
       )
     )
 
@@ -399,4 +399,9 @@ currentDate <- paste(
   ".csv",
   sep=""
   )
-write_csv(list_to_geocode_update, glue::glue("C:/DeGauss/{currentDate}"), na="")
+
+write_csv(
+  list_to_geocode_update,
+  file = glue::glue("degauss/{currentDate}"),
+  na=""
+  )
