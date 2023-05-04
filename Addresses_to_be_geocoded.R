@@ -334,10 +334,10 @@ addresses_already_done$add_line_2 <-
 addresses_already_done$city <- 
   iconv(addresses_already_done$city,"WINDOWS-1252","UTF-8")
 
-##To upload and update FULL_LIST_GEOCODE table
-#dbExecute(con,"drop table ##New_addresses")
+#To upload and update FULL_LIST_GEOCODE table
+dbExecute(con,"drop table ##New_addresses")
 
-dbWriteTable(con,"##New_addresses", addresses_already_done, temporary = FALSE)
+dbWriteTable(con,"##New_addresses",addresses_already_done,temporary=FALSE)
 
 dbExecute(con, "
   ALTER TABLE ##New_addresses
@@ -402,6 +402,6 @@ currentDate <- paste(
 
 write_csv(
   list_to_geocode_update,
-  file = glue::glue("degauss/{currentDate}"),
+  file = glue::glue("{currentDate}"),
   na=""
   )
