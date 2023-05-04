@@ -11,14 +11,14 @@ library(glue)
 library(tigris)
 
 con <- dbConnect(odbc::odbc(), "ClarityProd")
-date_for_file<-Sys.Date()-1
+date_for_file <- Sys.Date()-1
 
 cols(
   address = col_character(),
-  ADDRESS_FOR_GEOCODING = col_character(),
-  CITY_HX_FOR_GEOCODING = col_character(),
-  STATE_FOR_GEOCODING = col_character(),
-  ZIP5_FOR_GEOCODING = col_character(),
+  address_for_geocoding = col_character(),
+  city_hx_for_geocoding = col_character(),
+  state_for_geocoding = col_character(),
+  zip5_for_geocoding = col_character(),
   street = col_character(),
   zip = col_character(),
   city = col_character(),
@@ -31,11 +31,11 @@ cols(
   precision = col_character()
 )
 
-DeGauss_columns<-cols(
-  ADDRESS_FOR_GEOCODING = col_character(),
-  CITY_HX_FOR_GEOCODING = col_character(),
-  STATE_FOR_GEOCODING = col_character(),
-  ZIP5_FOR_GEOCODING = col_character(),
+dedauss_columns <- cols(
+  address_for_geocoding = col_character(),
+  city_hx_for_geocoding = col_character(),
+  state_for_geocoding = col_character(),
+  zip5_for_geocoding = col_character(),
   address = col_character(),
   matched_street = col_character(),
   matched_zip = col_character(),
@@ -48,147 +48,195 @@ DeGauss_columns<-cols(
   geocode_result = col_character()
 )
 
-DeGauss_import<-read_csv(paste0("C:/DeGauss/ADDRESSES_TO_GEOCODE_BMI_",str_replace_all(as.character(date_for_file),'-','_'),"_geocoded_v3.0.2.csv"),col_types=DeGauss_columns) %>%
+DeGauss_import<-read_csv(
+  paste0(
+    "C:/DeGauss/ADDRESSES_TO_GEOCODE_BMI_",
+    str_replace_all(as.character(date_for_file),'-','_'),
+    "_geocoded_v3.0.2.csv"),
+  col_types = degauss_columns) |>
     rename(
       street = matched_street,
       zip = matched_zip,
       city = matched_city,
       state = matched_state
-    )  %>%
-    filter(precision=='range',geocode_result!='imprecise_geocode') %>%
-  sf::st_as_sf(coords = c( "lon","lat"), crs = 'NAD83',remove=FALSE)
+    )  |>
+    filter(precision == 'range', geocode_result != 'imprecise_geocode') |>
+  sf::st_as_sf(coords = c("lon","lat"), crs = 'NAD83', remove=FALSE)
 
-all_states<-states(year=2019)
-sts <- all_states$STATEFP
+all_states <- states(year = 2019)
+sts <- all_states$statefp
 combined <- rbind_tigris(
   lapply(sts, function(x) {
-    tracts(x, cb = TRUE,year=2019)
+    tracts(x, cb = TRUE, year=2019)
   })
 )
 
-Add_tracts_to_degauss<-sf::st_join(DeGauss_import,combined) %>%
-  select(ADDRESS_FOR_GEOCODING,
-         CITY_HX_FOR_GEOCODING,
-         STATE_FOR_GEOCODING,
-         ZIP5_FOR_GEOCODING,
+add_tracts_to_degauss <- sf::st_join(degauss_import, combined) %>%
+  select(address_for_geocoding,
+         city_hx_for_geocoding,
+         state_for_geocoding,
+         zip5_for_geocoding,
          GEOID,
-         X=lon,
-         Y=lat,
-         STATEFP,
-         COUNTYFP,
-         TRACTCE,
-         GEOID) %>%
-  mutate(GEOCODE_ATTEMPTED=TRUE) %>%
-  group_by(ADDRESS_FOR_GEOCODING,CITY_HX_FOR_GEOCODING,ZIP5_FOR_GEOCODING) %>%
-  arrange(TRACTCE) %>%
-  mutate(row_num=row_number()) %>%
-  filter(row_num==1) %>%
+         X = lon,
+         Y = lat,
+         statefp,
+         countyfp,
+         tractce,
+         GEOID) |>
+  mutate(geocode_attempted = TRUE) |>
+  group_by(address_for_geocoding, city_hx_for_geocoding, zip5_for_geocoding) |>
+  arrange(tractce) |>
+  mutate(row_num = row_number()) |>
+  filter(row_num == 1) |>
   ungroup()
 
-# Old ARC GIS way
-# GEO_UPDATE <- read_delim("C:/GIS Local/to_be_geocoded/Results_of_geocoding/Addresses_2020_06_12_with_tracts.txt",delim=",",col_types=cols_only("ADDRESS_FO"='c',"CITY_HX_FO"='c',"STATE_FOR_"='c',"ZIP5_FOR_G"='c',"Loc_name"='c',"X"='c',"Y"='c',"STATEFP"='c',"COUNTYFP"='c',"TRACTCE"='c',"GEOID"='c',"NAME"='c')) %>%
-#   rename(ADDRESS_FOR_GEOCODING=ADDRESS_FO,
-#          STATE=STATE_FOR_,
-#          CITY_HX=CITY_HX_FO,
-#          ZIP5=ZIP5_FOR_G) %>%
-#   mutate(
-#     ZIP5=str_pad(ZIP5,5,"left","0") 
-#     ,GEOCODE_ATTEMPTED=TRUE) %>%
-#   unique()
-
-# UPDATE_LIST <- ADDR_UNIQUE_UPDATE %>%
-#   inner_join(GEO_UPDATE,by=c("ADDRESS_FOR_GEOCODING","CITY_HX_FOR_GEOCODING"="CITY_HX","STATE_FOR_GEOCODING"="STATE","ZIP5_FOR_GEOCODING"="ZIP5")) %>%
-#   mutate(GEOCODE_ATTEMPTED=replace_na(GEOCODE_ATTEMPTED,FALSE)) %>%
-#   filter(as.numeric(X)!=0,as.numeric(Y)!=0,ADDRESS_FOR_GEOCODING!='565 CLL ABOLICIN 2ND FLOOR') %>%
-#   unique()
-
-UPDATE_LIST <- ADDR_UNIQUE_UPDATE %>%
-  inner_join(Add_tracts_to_degauss,by=c("ADDRESS_FOR_GEOCODING","CITY_HX_FOR_GEOCODING","STATE_FOR_GEOCODING","ZIP5_FOR_GEOCODING")) %>%
-  mutate(GEOCODE_ATTEMPTED=replace_na(GEOCODE_ATTEMPTED,FALSE)) %>%
-  filter(as.numeric(X)!=0,as.numeric(Y)!=0,!ADDRESS_FOR_GEOCODING %in% c('565 CLL ABOLICIN 2ND FLOOR')) %>%
+update_list <- addr_unique_update |>
+  inner_join(
+    add_tracts_to_degauss, 
+    by = c(
+      "address_for_geocoding",
+      "city_hx_for_geocoding",
+      "state_for_geocoding",
+      "zip5_for_geocoding"
+      )
+    ) |>
+  mutate(geocode_attempted = replace_na(geocode_attempted, FALSE)) |>
+  filter(
+    as.numeric(X) != 0,
+    as.numeric(Y) != 0,
+    address_for_geocoding != "565 CLL ABOLICIN 2ND FLOOR"
+    ) |>
   unique()
 
 # Some characters don't read in well
-UPDATE_LIST$ADDR_HX_LINE1<-iconv(UPDATE_LIST$ADDR_HX_LINE1,"WINDOWS-1252","UTF-8")
-UPDATE_LIST$ADDR_HX_LINE2<-iconv(UPDATE_LIST$ADDR_HX_LINE2,"WINDOWS-1252","UTF-8")
-UPDATE_LIST$CITY_HX<-iconv(UPDATE_LIST$CITY_HX,"WINDOWS-1252","UTF-8")
-UPDATE_LIST$CITY_HX_FOR_GEOCODING<-iconv(UPDATE_LIST$CITY_HX_FOR_GEOCODING,"WINDOWS-1252","UTF-8")
-UPDATE_LIST$ADDRESS_FOR_GEOCODING<-iconv(UPDATE_LIST$ADDRESS_FOR_GEOCODING,"WINDOWS-1252","UTF-8")
+update_list$addr_hx_line1 <- 
+  iconv(update_list$addr_hx_line1, "WINDOWS-1252", "UTF-8")
+update_list$addr_hx_line2 <- 
+  iconv(update_list$addr_hx_line2, "WINDOWS-1252", "UTF-8")
+update_list$city_hx <-
+  iconv(update_list$city_hx, "WINDOWS-1252", "UTF-8")
+update_list$city_hx_for_geocoding <-
+  iconv(update_list$city_hx_for_geocoding, "WINDOWS-1252", "UTF-8")
+update_list$address_for_geocoding <- 
+  iconv(update_list$address_for_geocoding, "WINDOWS-1252", "UTF-8")
 # UPDATE_LIST$ADD_LINE_2<-iconv(ADDRESSES_ALREADY_DONE$ADD_LINE_2,"WINDOWS-1252","UTF-8")
 # UPDATE_LIST$CITY<-iconv(ADDRESSES_ALREADY_DONE$CITY,"WINDOWS-1252","UTF-8")
-tester<-UPDATE_LIST[,Export_Columns]
 
+export_eolumns <-
+  c("addr_hx_line1",
+    "addr_hx_line2",
+    "city_hx",
+    "state",
+    "zip_hx",
+    "address_for_geocoding",
+    "city_hx_for_geocoding",
+    "state_for_geocoding",
+    "zip5_for_geocoding",
+    "foster",
+    "RMH",
+    "POBox",
+    "CCHMC",
+    "StJoe",
+    "unknown_address",
+    "foreign_address",
+    "num_street_for",
+    "filter_for_geocoding",
+    "X",
+    "Y",
+    "statefp",
+    "countyfp",
+    "tractce",
+    "GEOID",
+    "geocode_attempted")
 
-Export_Columns<-c("ADDR_HX_LINE1","ADDR_HX_LINE2","CITY_HX","STATE","ZIP_HX","ADDRESS_FOR_GEOCODING","CITY_HX_FOR_GEOCODING","STATE_FOR_GEOCODING","ZIP5_FOR_GEOCODING","foster","RMH","POBox","CCHMC","STJOE","UNKNOWN_ADDRESS","FOREIGN_ADDRESS","NUM_STREET_FORM","FILTER_FOR_GEOCODING","X","Y","STATEFP","COUNTYFP","TRACTCE","GEOID","GEOCODE_ATTEMPTED")
+tester <- update_list[,export_columns]
 
 #Export_Date<-paste("UPDATE_LIST_GEOCODE_",str_replace_all(as.character(Sys.Date()),"-","_"),".csv",sep="")
 #dbExecute(con,"drop table ##UPLOAD_ADDRESSES")
-dbWriteTable(con,"##UPLOAD_ADDRESSES",UPDATE_LIST[,Export_Columns],temporary=FALSE)
-dbExecute(con,"
-if OBJECT_ID('TempTable.dbo.UPDATE_GEOCODE') is not null
-drop table TempTable.dbo.UPDATE_GEOCODE
+dbWriteTable(
+  con,
+  "##UPLOAD_ADDRESSES",
+  update_list[,export_columns],
+  temporary = FALSE
+  )
 
---USE IMPORTED TABLE
-SELECT * INTO TempTable.dbo.UPDATE_GEOCODE from ##UPLOAD_ADDRESSES
-")
-dbExecute(con,"
-UPDATE TempTable.[dbo].UPDATE_GEOCODE
-SET ADDR_HX_LINE1=case when ADDR_HX_LINE1='' then NULL else ADDR_HX_LINE1 end,
-ADDR_HX_LINE2=case when ADDR_HX_LINE2='' then NULL else ADDR_HX_LINE2 end,
-CITY_HX=case when CITY_HX='' then NULL else CITY_HX end,
-[STATE]=case when [STATE]='' then NULL else [STATE] end,
-ZIP_HX=case when ZIP_HX='' then NULL else ZIP_HX end,
-X=case when X='' then NULL else X end,
-Y=case when Y='' then NULL else Y end,
-STATEFP=case when STATEFP='' then NULL else STATEFP end,
-COUNTYFP=case when COUNTYFP='' then NULL else COUNTYFP end,
-TRACTCE=case when TRACTCE='' then NULL else TRACTCE end,
-GEOID=case when GEOID='' then NULL else GEOID end,
-GEOCODE_ATTEMPTED=case when GEOCODE_ATTEMPTED='' then NULL else GEOCODE_ATTEMPTED end
-;")
+dbExecute(con, "
+  IF object_d('temptable.dbo.update_geocode') IS NOT NULL
+  DROP TABLE temptable.dbo.update_geocode
+
+  --USE IMPORTED TABLE
+  SELECT * 
+    INTO temptable.dbo.update_geocode from ##upload_addresses
+          ")
+
+dbExecute(con, "
+  UPDATE temptable.dbo.update_geocode
+  SET addr_hx_line1 = cASE WHEN addr_hx_line1 = '' 
+    THEN NULL ELSE addr_hx_line1 END,
+  addr_hx_line2 = CASE WHEN addr_hx_line2 = '' THEN NULL ELSE addr_hx_line2 end,
+  city_hx = CASE WHEN city_hx = '' THEN NULL ELSE city_hx END,
+  state = CASE WHEN state = '' THEN NULL ELSE state END,
+  zip_hx = CASE WHEN zip_hx = '' THEN NULL ELSE zip_hx END,
+  X = CASE WHEN X= '' THEN NULL ELSE X END,
+  Y = CASE WHEN Y= '' THEN NULL ELSE Y END,
+  statefp = CASE WHEN statefp = '' THEN NULL ELSE statefp END,
+  countyfp = CASE WHEN countyfp = '' THEN NULL ELSE countyfp END,
+  tractce = CASE WHEN tractce = '' THEN NULL ELSE tractce END,
+  GEOID = CASE WHEN GEOID = '' THEN NULL ELSE GEOID END,
+  geocode_attempted = CASE WHEN geocode_attempted = '' THEN NULL 
+    ELSE geocode_attempted END
+          ;")
 
 #This throws an error but rename seems to work...
-dbExecute(con,"
-use TempTable;
-EXEC sp_rename 'TempTable.[dbo].UPDATE_GEOCODE.ADDR_HX_LINE1', ADD_LINE_1;
-EXEC sp_rename 'TempTable.[dbo].UPDATE_GEOCODE.ADDR_HX_LINE2', ADD_LINE_2;
-EXEC sp_rename 'TempTable.[dbo].UPDATE_GEOCODE.CITY_HX', CITY;
-EXEC sp_rename 'TempTable.[dbo].UPDATE_GEOCODE.ZIP_HX', ZIP;
+dbExecute(con, "
+  USE temptable;
+  EXEC SP_RENAME 'temptable.dbo.update_geocode.addr_hx_line1', add_line_1;
+  EXEC SP_RENAME 'temptable.dbo.update_geocode.addr_hx_line2', add_line_2;
+  EXEC SP_RENAME 'temptable.dbo.update_geocode.city_hx', city;
+  EXEC SP_RENAME 'temptable.dbo.update_geocode.zip_hx', zip;
+          ")
+
+dbExecute(con, "
+  DELETE FROM temptable.dbo.update_geocode 
+  WHERE ISNULL(DATALENGTH(add_line_1), 0)
+    + ISNULL(DATALENGGTH(add_line_2), 0)
+    + ISNULL(DATALENGTH(city) ,0)
+    + ISNULL(DATALENGTH(state),0)
+    + ISNULL(DATALENGTH(zip), 0) > 900
+          ")
+
+dbExecute(con, "
+  DELETE p 
+  FROM temptable.dbo.update_geocode p
+    INNER JOIN temptable.dbo.full_list_geocode g
+      ON ((p.add_line_1 = g.add_line_1) 
+        OR (p.add_line_1 IS NULL AND g.add_line_1 IS NULL))
+    AND ((p.add_line_2 = g.add_line_2 
+      OR (p.add_line_2 IS NULL AND g.add_line_2 IS NULL))
+    AND ((p.city = g.city) OR (p.city IS NULL AND g.city IS NULL))
+    AND ((p.zip = g.zip) OR (p.zip IS NULL AND g.zip IS NULL))
+    AND ((p.state = g.state) OR (p.state IS NULL AND g.state IS NULL))
+    WHERE (g.zip5_for_geocoding IS NOT NULL)
+          ")
+
+dbExecute(con, "
+  ALTER TABLE temptable.dbo.update_geocode
+  ADD [GeoLocation] geography;
+          ")
+
+dbExecute(con, "
+  UPDATE temptable.dbo.update_geocode
+  SET [GeoLocation]=geography::STPointFromText('Point('+left(X,12)+' '+left(Y,12)+')', 4326)
+  WHERE [GeoLocation] IS NULL AND X IS NOT NULL AND Y IS NOT NULL
+          ")
+
+dbExecute(con, "
+  INSERT INTO temptable.dbo.full_list_geocode
+  SELECT g.* FROM temptable.dbo.update_geocode g
 ")
 
-dbExecute(con,"
-DELETE FROM TempTable.[dbo].[UPDATE_GEOCODE] WHERE  isnull(datalength(ADD_LINE_1),0)+isnull(datalength(ADD_LINE_2),0)+isnull(datalength(CITY),0)+isnull(datalength(STATE),0)+isnull(datalength(ZIP),0)>900
-")
-dbExecute(con,"
-DELETE p 
-FROM TempTable.[dbo].[UPDATE_GEOCODE] p
-inner join TempTable.dbo.FULL_LIST_GEOCODE g
-on ((p.[ADD_LINE_1]=g.ADD_LINE_1) or (p.[ADD_LINE_1] is null and g.ADD_LINE_1 is null))
-and ((p.[ADD_LINE_2]=g.ADD_LINE_2)  or (p.[ADD_LINE_2] is null and g.ADD_LINE_2 is null))
-and ((p.[CITY]=g.CITY) or (p.[CITY] is null and g.CITY is null))
-and ((p.[ZIP]=g.[ZIP]) or (p.ZIP is null and g.ZIP is null))
-and ((p.[STATE]=g.[STATE]) or (p.[STATE] is null and g.[STATE] is null))
-where (g.ZIP5_FOR_GEOCODING is not null)
-")
-
-dbExecute(con,"
-alter table temptable.[dbo].[UPDATE_GEOCODE]
-ADD [GeoLocation] geography;
-")
-
-dbExecute(con,"
-UPDATE temptable.[dbo].[UPDATE_GEOCODE]
-SET [GeoLocation]=geography::STPointFromText('Point('+left(X,12)+' '+left(Y,12)+')', 4326)
-where [GeoLocation] is null and X is not null and Y is not null
-")
-
-dbExecute(con,"
-INSERT INTO TempTable.[dbo].[FULL_LIST_GEOCODE]
-SELECT g.* FROM TempTable.[dbo].[UPDATE_GEOCODE] g
-")
-
-dbExecute(con,"
-DROP TABLE TempTable.[dbo].[UPDATE_GEOCODE];
-")
+dbExecute(con, "
+  DROP TABLE temptable.dbo.update_geocode;
+          ")
 
 #write_csv(UPDATE_LIST[,Export_Columns],Export_Date,na="")
